@@ -92,7 +92,7 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 		guint32 field = parse_varnum<guint32>(tvb, &offset, length-offset);
 		guint8 type = (field&7);
 		field >>=3;
-		if (field >= 0x800000) {
+		if (field >= 0x800000 || field == 0) {
 //			printf("Error: field ID %u too high *before* offset %d\n", field, offset);
 			return false;
 		}
@@ -109,9 +109,9 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 			break;
 		case 1:
 		    if (length-offset >= 8){
-				guint64 value = tvb_get_ntoh64(tvb, offset);
 				guint64 flipvalue = tvb_get_letoh64(tvb, offset);
 				gdouble fltvalue = *(gdouble*)&flipvalue;
+				guint64 curtime = time(NULL)*1000000;
 				if (tree) {
 					guint64 unsignedflipvalue = (flipvalue&0x7fffffffffffffffULL);
 					if (unsignedflipvalue >= 0x7FF0000000000000ULL) {
@@ -130,11 +130,22 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 						} else if (unsignedflipvalue == 0x7FF0000000000000LL) {
 							message = "Infinity";
 						}
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, value, "%d: 0x%08llX [%s%s Double]", field, (long long int)value, signstr, message);
+						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: 0x%08llX [%s%s Double]", field, (long long int)flipvalue, signstr, message);
 					} else if (fltvalue > -1e+8 && fltvalue < 1e+8 && (fltvalue > 1e-8 || fltvalue < -1e-8)) {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, value, "%d: %lf", field, fltvalue);
+						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: %lf", field, fltvalue);
+					} else if (flipvalue > curtime-1000000000000 && flipvalue < curtime+1000000000000) { // +/- 12 days
+						char mystr[100];
+						time_t thistime = flipvalue/1000000;
+						char *ctime_str = ctime_r(&thistime, mystr);
+						int len = strlen(ctime_str);
+						if (len > 0) {
+							if (ctime_str[len-1]=='\n') {
+								ctime_str[len-1]='\0';
+							}
+						}
+						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: [%s].%06d", field, ctime_str, (int)(flipvalue%1000000));
 					} else {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, value, "%d: %lld", field, (long long int)value);
+						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: %lld", field, (long long int)flipvalue);
 					}
 				}
 				offset += 8;
@@ -207,7 +218,6 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 			break;
 		case 5:
 			if (length-offset >= 4){
-				guint32 value = tvb_get_ntohl(tvb, offset);
 				guint32 flipvalue = tvb_get_letohl(tvb, offset);
 				gfloat fltvalue = *(gfloat*)&flipvalue;
 				if (tree) {
@@ -228,11 +238,11 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 						} else if (unsignedflipvalue == 0x7F800000) {
 							message = "Infinity";
 						}
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)value, "%d: 0x%08X [%s%s Float]", field, value, signstr, message);
+						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: 0x%08X [%s%s Float]", field, flipvalue, signstr, message);
 					} else if (fltvalue > -1e+8 && fltvalue < 1e+8 && (fltvalue > 1e-8 || fltvalue < -1e-8)) {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)value, "%d: %f", field, fltvalue);
+						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: %f", field, fltvalue);
 					} else {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)value, "%d: %d", field, value);
+						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: %d", field, flipvalue);
 					}
 				}
 				offset += 4;
