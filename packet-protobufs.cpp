@@ -111,7 +111,8 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 		    if (length-offset >= 8){
 				guint64 flipvalue = tvb_get_letoh64(tvb, offset);
 				gdouble fltvalue = *(gdouble*)&flipvalue;
-				guint64 curtime = time(NULL)*1000000;
+				guint64 curtime = time(NULL);
+				curtime *= 1000000LL;
 				if (tree) {
 					guint64 unsignedflipvalue = (flipvalue&0x7fffffffffffffffULL);
 					if (unsignedflipvalue >= 0x7FF0000000000000ULL) {
@@ -120,7 +121,7 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 							signstr = "-";
 						}
 						const char *message="?";
-						if (flipvalue == 0xFFF8000000000000U) {
+						if (flipvalue == 0xFFF8000000000000ULL) {
 							message = "Indeterminite NaN";
 							signstr = "";
 						} else if (unsignedflipvalue >= 0x7FF8000000000001LL && unsignedflipvalue <= 0x7FFFFFFFFFFFFFFFLL) {
@@ -133,7 +134,7 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: 0x%08llX [%s%s Double]", field, (long long int)flipvalue, signstr, message);
 					} else if (fltvalue > -1e+8 && fltvalue < 1e+8 && (fltvalue > 1e-8 || fltvalue < -1e-8)) {
 						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: %lf", field, fltvalue);
-					} else if (flipvalue > curtime-1000000000000 && flipvalue < curtime+1000000000000) { // +/- 12 days
+					} else if (flipvalue > curtime-1000000000000LL && flipvalue < curtime+1000000000000LL) { // +/- 12 days
 						char mystr[100];
 						time_t thistime = flipvalue/1000000;
 						char *ctime_str = ctime_r(&thistime, mystr);

@@ -1,0 +1,4 @@
+*.o
+sst.so
+usr
+wireshark-dev*.deb
