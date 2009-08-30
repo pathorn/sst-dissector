@@ -85,6 +85,93 @@ static NumType parse_varnum(tvbuff_t *tvb, gint *offset, gint length) {
 	return retval;
 }
 
+bool parse_64bit(tvbuff_t *tvb, proto_tree *tree, guint32 field, gint &offset, gint length) {
+	if (length-offset >= 8){
+		guint64 flipvalue = tvb_get_letoh64(tvb, offset);
+		gdouble fltvalue = *(gdouble*)&flipvalue;
+		guint64 curtime = time(NULL);
+		curtime *= 1000000LL;
+		if (tree) {
+			guint64 unsignedflipvalue = (flipvalue&0x7fffffffffffffffULL);
+			if (unsignedflipvalue >= 0x7FF0000000000000ULL) {
+				const char *signstr = "";
+				if (unsignedflipvalue != flipvalue) {
+					signstr = "-";
+				}
+				const char *message="?";
+				if (flipvalue == 0xFFF8000000000000ULL) {
+					message = "Indeterminite NaN";
+					signstr = "";
+				} else if (unsignedflipvalue >= 0x7FF8000000000001LL && unsignedflipvalue <= 0x7FFFFFFFFFFFFFFFLL) {
+					message = "Quiet NaN";
+				} else if (unsignedflipvalue >= 0x7FF0000000000001LL && unsignedflipvalue <= 0x7FF7FFFFFFFFFFFFLL) {
+					message = "Signalling NaN";
+				} else if (unsignedflipvalue == 0x7FF0000000000000LL) {
+					message = "Infinity";
+				}
+				proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: 0x%08llX [%s%s Double]", field, (long long int)flipvalue, signstr, message);
+			} else if (fltvalue > -1e+8 && fltvalue < 1e+8 && (fltvalue > 1e-8 || fltvalue < -1e-8)) {
+				proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: %lf", field, fltvalue);
+			} else if (flipvalue > curtime-1000000000000LL && flipvalue < curtime+1000000000000LL) { // +/- 12 days
+				char mystr[100];
+				time_t thistime = flipvalue/1000000;
+				char *ctime_str = ctime_r(&thistime, mystr);
+				int len = strlen(ctime_str);
+				if (len > 0) {
+					if (ctime_str[len-1]=='\n') {
+						ctime_str[len-1]='\0';
+					}
+				}
+				proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: [%s].%06d", field, ctime_str, (int)(flipvalue%1000000));
+			} else {
+				proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: %lld", field, (long long int)flipvalue);
+			}
+		}
+		offset += 8;
+	} else {
+//				printf("Aborting parse: got 64-bit at offset %d, but only %d left\n", offset, length-offset);
+		return false;
+	}
+	return true;
+}
+
+bool parse_32bit(tvbuff_t *tvb, proto_tree *tree, guint32 field, gint &offset, gint length) {
+	if (length-offset >= 4){
+		guint32 flipvalue = tvb_get_letohl(tvb, offset);
+		gfloat fltvalue = *(gfloat*)&flipvalue;
+		if (tree) {
+			guint32 unsignedflipvalue = (flipvalue&0x7fffffffULL);
+			if (unsignedflipvalue >= 0x7F800000) {
+				const char *signstr = "";
+				if (unsignedflipvalue != flipvalue) {
+					signstr = "-";
+				}
+				const char *message="?";
+				if (flipvalue == 0xFFC00000U) {
+					message = "Indeterminite NaN";
+					signstr = "";
+				} else if (unsignedflipvalue >= 0x7FC00000 && unsignedflipvalue <= 0x7FFFFFFF) {
+					message = "Quiet NaN";
+				} else if (unsignedflipvalue >= 0x7F800001 && unsignedflipvalue <= 0x7FBFFFFF) {
+					message = "Signalling NaN";
+				} else if (unsignedflipvalue == 0x7F800000) {
+					message = "Infinity";
+				}
+				proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: 0x%08X [%s%s Float]", field, flipvalue, signstr, message);
+			} else if (fltvalue > -1e+8 && fltvalue < 1e+8 && (fltvalue > 1e-8 || fltvalue < -1e-8)) {
+				proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: %f", field, fltvalue);
+			} else {
+				proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: %d", field, flipvalue);
+			}
+		}
+		offset += 4;
+	} else {
+//				printf("Aborting parse: got 32-bit at offset %d, but only %d left\n", offset, length-offset);
+		return false;
+	}
+	return true;
+}
+
 bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 	gint offset = 0;
 	gint length = tvb_length(tvb);
@@ -108,53 +195,11 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 			}
 			break;
 		case 1:
-		    if (length-offset >= 8){
-				guint64 flipvalue = tvb_get_letoh64(tvb, offset);
-				gdouble fltvalue = *(gdouble*)&flipvalue;
-				guint64 curtime = time(NULL);
-				curtime *= 1000000LL;
-				if (tree) {
-					guint64 unsignedflipvalue = (flipvalue&0x7fffffffffffffffULL);
-					if (unsignedflipvalue >= 0x7FF0000000000000ULL) {
-						const char *signstr = "";
-						if (unsignedflipvalue != flipvalue) {
-							signstr = "-";
-						}
-						const char *message="?";
-						if (flipvalue == 0xFFF8000000000000ULL) {
-							message = "Indeterminite NaN";
-							signstr = "";
-						} else if (unsignedflipvalue >= 0x7FF8000000000001LL && unsignedflipvalue <= 0x7FFFFFFFFFFFFFFFLL) {
-							message = "Quiet NaN";
-						} else if (unsignedflipvalue >= 0x7FF0000000000001LL && unsignedflipvalue <= 0x7FF7FFFFFFFFFFFFLL) {
-							message = "Signalling NaN";
-						} else if (unsignedflipvalue == 0x7FF0000000000000LL) {
-							message = "Infinity";
-						}
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: 0x%08llX [%s%s Double]", field, (long long int)flipvalue, signstr, message);
-					} else if (fltvalue > -1e+8 && fltvalue < 1e+8 && (fltvalue > 1e-8 || fltvalue < -1e-8)) {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: %lf", field, fltvalue);
-					} else if (flipvalue > curtime-1000000000000LL && flipvalue < curtime+1000000000000LL) { // +/- 12 days
-						char mystr[100];
-						time_t thistime = flipvalue/1000000;
-						char *ctime_str = ctime_r(&thistime, mystr);
-						int len = strlen(ctime_str);
-						if (len > 0) {
-							if (ctime_str[len-1]=='\n') {
-								ctime_str[len-1]='\0';
-							}
-						}
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: [%s].%06d", field, ctime_str, (int)(flipvalue%1000000));
-					} else {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 8, flipvalue, "%d: %lld", field, (long long int)flipvalue);
-					}
-				}
-				offset += 8;
-			} else {
-//				printf("Aborting parse: got 64-bit at offset %d, but only %d left\n", offset, length-offset);
+			if (!parse_64bit(tvb, tree, field, offset, length)) {
 				return false;
+			} else {
+				break;
 			}
-			break;
 		case 2:
 			{
 				guint32 slen = parse_varnum<guint32>(tvb, &offset, length-offset);
@@ -179,16 +224,14 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 						guint8 *mystr = new guint8[slen+1];
 						tvb_memcpy(tvb, mystr, offset, slen);
 						mystr[slen]='\0';
-						bool isuuid=false;
-						if (slen <= 16 && slen > 4) {
-							for (int i = 0; i < slen; ++i) {
-								if ((mystr[i] < 32 && !isspace(mystr[i])) || mystr[i] >= 127) {
-									isuuid = true;
-									break;
-								}
+						bool isbinary=false;
+						for (int i = 0; i < slen; ++i) {
+							if ((mystr[i] < 32 && !isspace(mystr[i])) || mystr[i] >= 127) {
+								isbinary = true;
+								break;
 							}
 						}
-						if (isuuid && slen <= 16) {
+						if (isbinary && slen > 12 && slen <= 16) {
 							guint8 tmpbuf[16];
 							memset(tmpbuf, 0, 16);
 							tvb_memcpy(tvb, tmpbuf, offset, slen);
@@ -199,6 +242,18 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 							char strbuf[80];
 							guid_to_str_buf(&uuid, strbuf, 70);
 							proto_tree_add_bytes_format(tree, hf_proto_str, tvb, offset, slen, mystr, "%d: UUID %s", field, strbuf);
+						} else if (isbinary && ((slen % 8) == 0) && slen >= 24) {
+							gint myoffset = offset;
+							for (; myoffset < offset+slen; myoffset+=8) {
+								gint tmp = myoffset;
+								parse_64bit(tvb, tree, field, tmp, offset+slen);
+							}
+						} else if (isbinary && ((slen % 4) == 0)) {
+							gint myoffset = offset;
+							for (; myoffset < offset+slen; myoffset+=4) {
+								gint tmp = myoffset;
+								parse_32bit(tvb, tree, field, tmp, offset+slen);
+							}
 						} else if (slen < 500) {
 							proto_tree_add_bytes_format(tree, hf_proto_str, tvb, offset, slen, mystr, "%d: String (%d bytes): %s", field, slen, mystr);
 						} else {
@@ -218,40 +273,11 @@ bool parse_protobufs(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree) {
 			}
 			break;
 		case 5:
-			if (length-offset >= 4){
-				guint32 flipvalue = tvb_get_letohl(tvb, offset);
-				gfloat fltvalue = *(gfloat*)&flipvalue;
-				if (tree) {
-					guint32 unsignedflipvalue = (flipvalue&0x7fffffffULL);
-					if (unsignedflipvalue >= 0x7F800000) {
-						const char *signstr = "";
-						if (unsignedflipvalue != flipvalue) {
-							signstr = "-";
-						}
-						const char *message="?";
-						if (flipvalue == 0xFFC00000U) {
-							message = "Indeterminite NaN";
-							signstr = "";
-						} else if (unsignedflipvalue >= 0x7FC00000 && unsignedflipvalue <= 0x7FFFFFFF) {
-							message = "Quiet NaN";
-						} else if (unsignedflipvalue >= 0x7F800001 && unsignedflipvalue <= 0x7FBFFFFF) {
-							message = "Signalling NaN";
-						} else if (unsignedflipvalue == 0x7F800000) {
-							message = "Infinity";
-						}
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: 0x%08X [%s%s Float]", field, flipvalue, signstr, message);
-					} else if (fltvalue > -1e+8 && fltvalue < 1e+8 && (fltvalue > 1e-8 || fltvalue < -1e-8)) {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: %f", field, fltvalue);
-					} else {
-						proto_tree_add_uint64_format(tree, hf_proto_int, tvb, offset, 4, (guint64)flipvalue, "%d: %d", field, flipvalue);
-					}
-				}
-				offset += 4;
-			} else {
-//				printf("Aborting parse: got 32-bit at offset %d, but only %d left\n", offset, length-offset);
+			if (!parse_32bit(tvb, tree, field, offset, length)) {
 				return false;
+			} else {
+				break;
 			}
-			break;
 		default:
 //		  printf("Aborting parse: got unknown type %d offset %d\n", (int)type, offset);
 			return false;
