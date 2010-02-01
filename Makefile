@@ -16,8 +16,10 @@ $(OUT): $(OBJ)
 clean:
 	rm -f $(OBJ) $(OUT)
 
-linux-install: $(OUT)
-	install -t /usr/lib/wireshark/plugins -m 0755 $(OUT)
+install: $(OUT)
+	if [ x"`uname`" = x"Darwin" ]; then \
+		install -m 0755 $(OUT) /Applications/Wireshark.app/Contents/Resources/lib/wireshark/plugins/; \
+	else \
+		install -t /usr/lib/wireshark/plugins -m 0755 $(OUT) ;\
+	fi
 
-mac-install: $(OUT)
-	install -m 0755 $(OUT) /Applications/Wireshark.app/Contents/Resources/lib/wireshark/plugins/
